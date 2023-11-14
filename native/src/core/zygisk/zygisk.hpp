@@ -39,6 +39,8 @@ inline int zygisk_request(int req) {
     return fd;
 }
 
+#if USE_PTRACE != 1
+
 // The reference of the following structs
 // https://cs.android.com/android/platform/superproject/main/+/main:art/libnativebridge/include/nativebridge/native_bridge.h
 
@@ -54,3 +56,7 @@ struct NativeBridgeCallbacks {
     void *padding[5];
     bool (*isCompatibleWith)(uint32_t);
 };
+
+#endif
+
+bool trace_zygote(int pid, const char *libpath);
