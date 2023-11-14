@@ -28,7 +28,10 @@ static void hook_unloader();
 static void unhook_functions();
 static void hook_jni_env();
 static void restore_jni_env(JNIEnv *env);
+
+#if USE_PTRACE != 1
 static void reload_native_bridge(const string &nb);
+#endif
 
 namespace {
 
@@ -55,7 +58,10 @@ bool should_unmap_zygisk = false;
 HookContext *g_ctx;
 const JNINativeInterface *old_functions = nullptr;
 JNINativeInterface *new_functions = nullptr;
+
+#if USE_PTRACE != 1
 const NativeBridgeRuntimeCallbacks *runtime_callbacks = nullptr;
+#endif
 
 #define DCL_PRE_POST(name) \
 void name##_pre();         \
@@ -207,6 +213,7 @@ DCL_HOOK_FUNC(int, pthread_attr_destroy, void *target) {
     return res;
 }
 
+#if USE_PTRACE != 1
 // it should be safe to assume all dlclose's in libnativebridge are for zygisk_loader
 DCL_HOOK_FUNC(int, dlclose, void *handle) {
     static bool kDone = false;
@@ -217,6 +224,7 @@ DCL_HOOK_FUNC(int, dlclose, void *handle) {
     }
     [[clang::musttail]] return old_dlclose(handle);
 }
+#endif
 
 #undef DCL_HOOK_FUNC
 
@@ -720,6 +728,7 @@ void HookContext::nativeForkAndSpecialize_post() {
 
 // -----------------------------------------------------------------
 
+#if USE_PTRACE != 1
 inline void *unwind_get_region_start(_Unwind_Context *ctx) {
     auto fp = _Unwind_GetRegionStart(ctx);
 #if defined(__arm__)
@@ -816,6 +825,7 @@ static void reload_native_bridge(const string &nb) {
         load_native_bridge(nb.data() + len, runtime_callbacks);
     }
 }
+#endif
 
 static void hook_register(dev_t dev, ino_t inode, const char *symbol, void *new_func, void **old_func) {
     if (!lsplt::RegisterHook(dev, inode, symbol, new_func, old_func)) {
@@ -844,20 +854,27 @@ void hook_functions() {
 
     ino_t android_runtime_inode = 0;
     dev_t android_runtime_dev = 0;
+#if USE_PTRACE != 1
     ino_t native_bridge_inode = 0;
     dev_t native_bridge_dev = 0;
+#endif
 
     for (auto &map : lsplt::MapInfo::Scan()) {
         if (map.path.ends_with("/libandroid_runtime.so")) {
             android_runtime_inode = map.inode;
             android_runtime_dev = map.dev;
-        } else if (map.path.ends_with("/libnativebridge.so")) {
+        }
+#if USE_PTRACE != 1		
+		else if (map.path.ends_with("/libnativebridge.so")) {
             native_bridge_inode = map.inode;
             native_bridge_dev = map.dev;
         }
+#endif
     }
 
+#if USE_PTRACE != 1
     PLT_HOOK_REGISTER(native_bridge_dev, native_bridge_inode, dlclose);
+#endif
     PLT_HOOK_REGISTER(android_runtime_dev, android_runtime_inode, fork);
     PLT_HOOK_REGISTER(android_runtime_dev, android_runtime_inode, unshare);
     PLT_HOOK_REGISTER(android_runtime_dev, android_runtime_inode, androidSetCreateThreadFunc);
