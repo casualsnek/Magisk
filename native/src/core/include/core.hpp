@@ -67,6 +67,7 @@ struct module_info {
 
 extern bool RECOVERY_MODE;
 extern bool zygisk_enabled;
+extern bool stop_trace_zygote;
 extern std::vector<module_info> *module_list;
 
 void reset_zygisk(bool restore);
