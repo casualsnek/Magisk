@@ -11,6 +11,7 @@
 
 // tmpfs paths
 #define INTLROOT      ".magisk"
+#define ZYGISKLIB     INTLROOT "/zygisk"
 #define MIRRDIR       INTLROOT "/mirror"
 #define PREINITMIRR   INTLROOT "/preinit"
 #define BLOCKDIR      INTLROOT "/block"

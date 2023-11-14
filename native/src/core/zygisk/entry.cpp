@@ -15,6 +15,7 @@ using namespace std;
 
 void *self_handle = nullptr;
 string native_bridge = "0";
+bool stop_trace_zygote = false;
 
 extern "C" [[maybe_unused]] void zygisk_inject_entry(void *handle) {
     self_handle = handle;
@@ -23,6 +24,7 @@ extern "C" [[maybe_unused]] void zygisk_inject_entry(void *handle) {
     ZLOGD("load success\n");
 }
 
+#if USE_PTRACE != 1
 static bool is_compatible_with(uint32_t) {
     auto name = get_prop(NBPROP);
     android_dlextinfo info = {
@@ -43,6 +45,7 @@ extern "C" [[maybe_unused]] NativeBridgeCallbacks NativeBridgeItf{
     .padding = {},
     .isCompatibleWith = &is_compatible_with,
 };
+#endif
 
 // The following code runs in zygote/app process
 
@@ -236,10 +239,14 @@ void reset_zygisk(bool restore) {
     }
     if (restore) {
         zygote_start_count = 1;
+        stop_trace_zygote = false;
     } else if (zygote_start_count.fetch_add(1) > 3) {
         LOGW("zygote crashes too many times, rolling-back\n");
+        stop_trace_zygote = true;
         restore = true;
     }
+
+#if USE_PTRACE != 1
     if (restore) {
         string native_bridge_orig = "0";
         if (native_bridge.length() > strlen(ZYGISKLDR)) {
@@ -249,4 +256,5 @@ void reset_zygisk(bool restore) {
     } else {
         set_prop(NBPROP, native_bridge.data());
     }
+#endif
 }
