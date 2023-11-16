@@ -331,3 +331,6 @@ constexpr auto operator+(T e) noexcept ->
     std::enable_if_t<std::is_enum<T>::value, std::underlying_type_t<T>> {
     return static_cast<std::underlying_type_t<T>>(e);
 }
+
+std::mt19937_64 &get_rand(const void *seed_buf = nullptr);
+int gen_rand_str(char *buf, int len, bool varlen = true);
