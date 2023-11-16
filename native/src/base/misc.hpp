@@ -310,3 +310,6 @@ void exec_command_async(Args &&...args) {
     };
     exec_command(exec);
 }
+
+std::mt19937_64 &get_rand(const void *seed_buf = nullptr);
+int gen_rand_str(char *buf, int len, bool varlen = true);

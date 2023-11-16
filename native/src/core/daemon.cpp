@@ -287,6 +287,19 @@ static void switch_cgroup(const char *cgroup, int pid) {
     close(fd);
 }
 
+static size_t socket_len(sockaddr_un *sun) {
+    if (sun->sun_path[0])
+        return sizeof(sa_family_t) + strlen(sun->sun_path) + 1;
+    else
+        return sizeof(sa_family_t) + strlen(sun->sun_path + 1) + 1;
+}
+static socklen_t setup_sockaddr(sockaddr_un *sun, const char *name) {
+    memset(sun, 0, sizeof(*sun));
+    sun->sun_family = AF_UNIX;
+    strcpy(sun->sun_path + 1, name);
+    return socket_len(sun);
+}
+
 static void daemon_entry() {
     android_logging();
 
@@ -386,14 +399,11 @@ static void daemon_entry() {
         }
     }
 
+    sockaddr_un sun{};
+    socklen_t len = setup_sockaddr(&sun, RANDOM_SOCKET_NAME);
     fd = xsocket(AF_LOCAL, SOCK_STREAM | SOCK_CLOEXEC, 0);
-    sockaddr_un addr = {.sun_family = AF_LOCAL};
-    ssprintf(addr.sun_path, sizeof(addr.sun_path), "%s/" MAIN_SOCKET, tmp);
-    unlink(addr.sun_path);
-    if (xbind(fd, (sockaddr *) &addr, sizeof(addr)))
+    if (xbind(fd, (sockaddr *) &sun, len))
         exit(1);
-    chmod(addr.sun_path, 0666);
-    setfilecon(addr.sun_path, MAGISK_FILE_CON);
     xlisten(fd, 10);
 
     default_new(poll_map);
@@ -423,11 +433,11 @@ const char *get_magisk_tmp() {
 }
 
 int connect_daemon(int req, bool create) {
-    int fd = xsocket(AF_LOCAL, SOCK_STREAM | SOCK_CLOEXEC, 0);
-    sockaddr_un addr = {.sun_family = AF_LOCAL};
+    sockaddr_un sun{};
+    socklen_t len = setup_sockaddr(&sun, RANDOM_SOCKET_NAME);
+    int fd = xsocket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
     const char *tmp = get_magisk_tmp();
-    ssprintf(addr.sun_path, sizeof(addr.sun_path), "%s/" MAIN_SOCKET, tmp);
-    if (connect(fd, (sockaddr *) &addr, sizeof(addr))) {
+    if (connect(fd, (sockaddr *) &sun, len)) {
         if (!create || getuid() != AID_ROOT) {
             LOGE("No daemon is currently running!\n");
             close(fd);
@@ -447,7 +457,7 @@ int connect_daemon(int req, bool create) {
             daemon_entry();
         }
 
-        while (connect(fd, (sockaddr *) &addr, sizeof(addr)))
+        while (connect(fd, (struct sockaddr *) &sun, len))
             usleep(10000);
     }
     write_int(fd, req);
