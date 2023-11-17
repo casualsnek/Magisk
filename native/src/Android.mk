@@ -41,6 +41,7 @@ LOCAL_SRC_FILES := \
     core/deny/cli.cpp \
     core/deny/utils.cpp \
     core/deny/revert.cpp \
+    core/deny/ptrace.cpp \
     core/zygisk/proc_monitor.cpp \
     core/zygisk/ptrace.cpp \
     core/zygisk/ptrace_utils.cpp
