@@ -266,7 +266,7 @@ static void inject_zygisk_libs(root_node *system) {
 
 vector<module_info> *module_list;
 
-void load_modules() {
+static void load_modules(bool su_mount) {
     node_entry::mirror_dir = get_magisk_tmp() + "/"s MIRRDIR;
     node_entry::module_mnt =  get_magisk_tmp() + "/"s MODULEMNT "/";
 
@@ -280,6 +280,8 @@ void load_modules() {
         const char *module = m.name.data();
         char *b = buf + ssprintf(buf, sizeof(buf), "%s/" MODULEMNT "/%s/", get_magisk_tmp(), module);
 
+        if (su_mount) goto mount_systemless;
+
         // Read props
         strcpy(b, "system.prop");
         if (access(buf, F_OK) == 0) {
@@ -288,6 +290,7 @@ void load_modules() {
             load_prop_file(buf, true);
         }
 
+        mount_systemless:
         // Check whether skip mounting
         strcpy(b, "skip_mount");
         if (access(buf, F_OK) == 0)
@@ -356,6 +359,15 @@ void load_modules() {
     ssprintf(buf, sizeof(buf), "%s/" WORKERDIR, get_magisk_tmp());
     xmount(nullptr, buf, nullptr, MS_REMOUNT | MS_RDONLY, nullptr);
 }
+
+void load_modules() {
+    load_modules(false);
+}
+
+void su_mount() {
+    load_modules(true);
+}
+
 
 /************************
  * Filesystem operations
