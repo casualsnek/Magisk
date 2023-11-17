@@ -116,6 +116,7 @@ db_settings::db_settings() {
     data[SU_MULTIUSER_MODE] = MULTIUSER_MODE_OWNER_ONLY;
     data[SU_MNT_NS] = NAMESPACE_MODE_REQUESTER;
     data[DENYLIST_CONFIG] = false;
+    data[SULIST_CONFIG] = false;
     data[ZYGISK_CONFIG] = rust::get_magiskd().is_emulator();
 }
 
@@ -242,10 +243,6 @@ static char *open_and_init_db(sqlite3 *&db) {
         upgrade = true;
     }
     if (ver == 10) {
-        sqlite3_exec(db,
-                "DROP TABLE IF EXISTS hidelist;"
-                "DELETE FROM settings WHERE key='magiskhide';",
-                nullptr, nullptr, &err);
         err_ret(err);
         create_denylist();
         err_ret(err);
@@ -276,6 +273,11 @@ static char *open_and_init_db(sqlite3 *&db) {
         sqlite3_exec(db, query, nullptr, nullptr, &err);
         err_ret(err);
     }
+    sqlite3_exec(db, "REPLACE INTO settings (key,value) VALUES('denylist',0);"
+                     "CREATE TABLE IF NOT EXISTS hidelist "
+                "(package_name TEXT, process TEXT, PRIMARY KEY(package_name, process));"
+                     "CREATE TABLE IF NOT EXISTS sulist "
+                "(package_name TEXT, process TEXT, PRIMARY KEY(package_name, process));", nullptr, nullptr, &err);
     return nullptr;
 }
 
