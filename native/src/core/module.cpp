@@ -346,6 +346,61 @@ void load_modules() {
     xmount(nullptr, buf, nullptr, MS_REMOUNT | MS_RDONLY, nullptr);
 }
 
+void su_mount() {
+    node_entry::mirror_dir = get_magisk_tmp() + "/"s MIRRDIR;
+    node_entry::module_mnt =  get_magisk_tmp() + "/"s MODULEMNT "/";
+
+    auto root = make_unique<root_node>("");
+    auto system = new root_node("system");
+    root->insert(system);
+
+    char buf[4096];
+    for (const auto &m : *module_list) {
+        const char *module = m.name.data();
+        char *b = buf + ssprintf(buf, sizeof(buf), "%s/" MODULEMNT "/%s/", get_magisk_tmp(), module);
+
+        // Check whether skip mounting
+        strcpy(b, "skip_mount");
+        if (access(buf, F_OK) == 0)
+            continue;
+
+        // Double check whether the system folder exists
+        strcpy(b, "system");
+        if (access(buf, F_OK) != 0)
+            continue;
+
+        LOGI("%s: loading mount files\n", module);
+        b[-1] = '\0';
+        int fd = xopen(buf, O_RDONLY | O_CLOEXEC);
+        system->collect_module_files(module, fd);
+        close(fd);
+    }
+
+    if (get_magisk_tmp() != "/sbin"sv || !str_contains(getenv("PATH") ?: "", "/sbin")) {
+        // Need to inject our binaries into /system/bin
+        inject_magisk_bins(system);
+    }
+
+    if (!system->is_empty()) {
+        // Handle special read-only partitions
+        for (const char *part : { "/vendor", "/product", "/system_ext" }) {
+            struct stat st{};
+            if (lstat(part, &st) == 0 && S_ISDIR(st.st_mode)) {
+                if (auto old = system->extract(part + 1)) {
+                    auto new_node = new root_node(old);
+                    root->insert(new_node);
+                }
+            }
+        }
+        root->prepare();
+        root->mount();
+    }
+
+    ssprintf(buf, sizeof(buf), "%s/" WORKERDIR, get_magisk_tmp());
+    xmount(nullptr, buf, nullptr, MS_REMOUNT | MS_RDONLY, nullptr);
+}
+
+
 /************************
  * Filesystem operations
  ************************/
