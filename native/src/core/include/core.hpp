@@ -72,6 +72,7 @@ extern bool stop_trace_zygote;
 extern std::vector<module_info> *module_list;
 
 extern int magisktmpfs_fd;
+extern std::string magisk_tmp;
 extern bool HAVE_32;
 
 void reset_zygisk(bool restore);

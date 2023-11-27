@@ -438,18 +438,17 @@ static void daemon_entry() {
     poll_loop();
 }
 
+string magisk_tmp = "";
+
 const char *get_magisk_tmp() {
-    static const char *path = nullptr;
-    if (path == nullptr) {
+    if (magisk_tmp == "") {
         if (access("/debug_ramdisk/" INTLROOT, F_OK) == 0) {
-            path = "/debug_ramdisk";
+            magisk_tmp = "/debug_ramdisk";
         } else if (access("/sbin/" INTLROOT, F_OK) == 0) {
-            path = "/sbin";
-        } else {
-            path = "";
+            magisk_tmp = "/sbin";
         }
     }
-    return path;
+    return magisk_tmp.data();
 }
 
 int connect_daemon(int req, bool create) {
