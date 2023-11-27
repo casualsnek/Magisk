@@ -207,16 +207,17 @@ public:
             return;
 
         const string dir_name = isa<tmpfs_node>(parent()) ? parent()->worker_path() : parent()->node_path();
-        if (name() == "magisk") {
-            for (int i = 0; applet_names[i]; ++i) {
-                string dest = dir_name + "/" + applet_names[i];
-                VLOGD("create", "./magisk", dest.data());
-                xsymlink("./magisk", dest.data());
-            }
-        } else {
-            string dest = dir_name + "/supolicy";
+        if (name() == "supolicy") {
+            string dest = dir_name + "/" + name();
             VLOGD("create", "./magiskpolicy", dest.data());
             xsymlink("./magiskpolicy", dest.data());
+            return; 
+        }
+        if (name() != "magisk" && name() != "magiskpolicy") {
+            string dest = dir_name + "/" + name();
+            VLOGD("create", "./magisk", dest.data());
+            xsymlink("./magisk", dest.data());
+            return;
         }
         create_and_mount("magisk", src, true);
     }
@@ -243,14 +244,13 @@ static void inject_magisk_bins(root_node *system) {
         system->insert(bin);
     }
 
-    // Insert binaries
-    bin->insert(new magisk_node("magisk"));
-    bin->insert(new magisk_node("magiskpolicy"));
+    const char *bins[] = { "magisk", "magiskpolicy", "supolicy", nullptr };
 
-    // Also delete all applets to make sure no modules can override it
+    for (int i = 0; bins[i]; ++i)
+        bin->insert(new magisk_node(bins[i]));
+
     for (int i = 0; applet_names[i]; ++i)
-        delete bin->extract(applet_names[i]);
-    delete bin->extract("supolicy");
+        bin->insert(new magisk_node(applet_names[i]));
 }
 
 #if USE_PTRACE != 1
@@ -315,10 +315,9 @@ void load_modules() {
         system->collect_module_files(module, fd);
         close(fd);
     }
-    if (get_magisk_tmp() != "/sbin"sv || !str_contains(getenv("PATH") ?: "", "/sbin")) {
-        // Need to inject our binaries into /system/bin
-        inject_magisk_bins(system);
-    }
+
+    // Need to inject our binaries into /system/bin
+    inject_magisk_bins(system);
 
 #if USE_PTRACE != 1
     if (zygisk_enabled) {
@@ -387,10 +386,8 @@ void su_mount() {
         close(fd);
     }
 
-    if (get_magisk_tmp() != "/sbin"sv || !str_contains(getenv("PATH") ?: "", "/sbin")) {
-        // Need to inject our binaries into /system/bin
-        inject_magisk_bins(system);
-    }
+    // Need to inject our binaries into /system/bin
+    inject_magisk_bins(system);
 
     if (!system->is_empty()) {
         // Handle special read-only partitions
