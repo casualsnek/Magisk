@@ -10,6 +10,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <sys/mman.h>
 
 #include <lsplt.hpp>
 
@@ -19,6 +20,7 @@
 #include "zygisk.hpp"
 #include "memory.hpp"
 #include "module.hpp"
+#include "solist.hpp"
 
 using namespace std;
 using jni_hook::hash_map;
@@ -121,7 +123,7 @@ struct HookContext {
 
     ~HookContext();
 
-    void run_modules_pre(const vector<int> &fds);
+    void run_modules_pre(const vector<int> &fds, bool hide = false);
     void run_modules_post();
     DCL_PRE_POST(fork)
     DCL_PRE_POST(app_specialize)
@@ -524,7 +526,7 @@ void HookContext::sanitize_fds() {
     }
 }
 
-void HookContext::run_modules_pre(const vector<int> &fds) {
+void HookContext::run_modules_pre(const vector<int> &fds, bool hide) {
     for (int i = 0; i < fds.size(); ++i) {
         struct stat s{};
         if (fstat(fds[i], &s) != 0 || !S_ISREG(s.st_mode)) {
@@ -535,7 +537,7 @@ void HookContext::run_modules_pre(const vector<int> &fds) {
             .flags = ANDROID_DLEXT_USE_LIBRARY_FD,
             .library_fd = fds[i],
         };
-        if (void *h = android_dlopen_ext("/jit-cache", RTLD_LAZY, &info)) {
+        if (void *h = android_dlopen_ext("/jit-zygisk-cache", RTLD_LAZY, &info)) {
             if (void *e = dlsym(h, "zygisk_module_entry")) {
                 modules.emplace_back(i, h, e);
             }
@@ -543,6 +545,34 @@ void HookContext::run_modules_pre(const vector<int> &fds) {
             ZLOGW("Failed to dlopen zygisk module: %s\n", dlerror());
         }
         close(fds[i]);
+    }
+
+    if (hide) {
+        // Remove from SoList to avoid detection
+        if (SoList::Initialize()) {
+            SoList::NullifySoName("/memfd:jit-zygisk-cache");
+            SoList::NullifySoName("/modules/");
+        } else {
+            ZLOGE("Failed to initialize SoList\n");
+        }
+    
+        // Remove from maps to avoid detection
+        for (auto &info : lsplt::MapInfo::Scan()) {
+            if (strstr(info.path.data(), "/memfd:jit-zygisk-cache") == nullptr &&
+                strstr(info.path.data(), "/modules/") == nullptr)
+                continue;
+            ZLOGD("hide_remap: addr=[%p-%p] dev=[%ld] inode=[%ld] [%s]\n", 
+                info.start, info.end, info.dev, info.inode, info.path.data());
+            void *addr = reinterpret_cast<void *>(info.start);
+            size_t size = info.end - info.start;
+            void *copy = xmmap(nullptr, size, PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+            if ((info.perms & PROT_READ) == 0) {
+                mprotect(addr, size, PROT_READ);
+            }
+            memcpy(copy, addr, size);
+            mremap(copy, size, size, MREMAP_MAYMOVE | MREMAP_FIXED, addr);
+            mprotect(addr, size, info.perms);
+        }
     }
 
     for (auto it = modules.begin(); it != modules.end();) {
@@ -580,13 +610,7 @@ void HookContext::app_specialize_pre() {
 
     vector<int> module_fds;
     int fd = remote_get_info(args.app->uid, process, &info_flags, module_fds);
-    if (args.app->app_data_dir) {
-        const auto *app_data_dir = env->GetStringUTFChars(args.app->app_data_dir, nullptr);
-        if (std::string_view(app_data_dir).ends_with("/com.android.systemui")) {
-            info_flags |= PROCESS_IS_SYS_UI;
-        }
-        env->ReleaseStringUTFChars(args.app->app_data_dir, app_data_dir);
-    }
+    bool do_hide = false;
 
     if ((info_flags & ALLOWLIST_ENFORCING) == ALLOWLIST_ENFORCING) {
         flags[ALLOWLIST_ENFORCED] = true;
@@ -599,10 +623,13 @@ void HookContext::app_specialize_pre() {
                 args.app->mount_external = 1 /* MOUNT_EXTERNAL_DEFAULT */;
                 flags[RESTORE_MOUNT_EXTERNAL_NONE] = true;
             }
+        } else {
+            do_hide = (args.app->uid % 100000) >= 10000;
         }
     } else if ((info_flags & UNMOUNT_MASK) == UNMOUNT_MASK) {
         ZLOGI("[%s] is on the hidelist\n", process);
         flags[DO_REVERT_UNMOUNT] = true;
+        do_hide = (args.app->uid % 100000) >= 10000;
         // Ensure separated namespace, allow denylist to handle isolated process before Android 11
         if (args.app->mount_external == 0 /* MOUNT_EXTERNAL_NONE */) {
             // Only apply the fix before Android 11, as it can cause undefined behaviour in later versions
@@ -615,7 +642,7 @@ void HookContext::app_specialize_pre() {
     }
 
     if (fd >= 0) {
-        run_modules_pre(module_fds);
+        run_modules_pre(module_fds, do_hide);
     }
     close(fd);
 }
@@ -900,8 +927,8 @@ void hook_functions() {
             android_runtime_inode = map.inode;
             android_runtime_dev = map.dev;
         }
-#if USE_PTRACE != 1		
-		else if (map.path.ends_with("/libnativebridge.so")) {
+#if USE_PTRACE != 1        
+        else if (map.path.ends_with("/libnativebridge.so")) {
             native_bridge_inode = map.inode;
             native_bridge_dev = map.dev;
         }
