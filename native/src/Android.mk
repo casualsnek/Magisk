@@ -13,7 +13,8 @@ LOCAL_STATIC_LIBRARIES := \
     libsystemproperties \
     libphmap \
     liblsplt \
-    libmagisk-rs
+    libmagisk-rs \
+    libxdl
 
 LOCAL_SRC_FILES := \
     core/applets.cpp \
@@ -43,7 +44,7 @@ LOCAL_SRC_FILES := \
     core/zygisk/proc_monitor.cpp \
     core/zygisk/ptrace.cpp \
     core/zygisk/ptrace_utils.cpp \
-    core/deny/ptrace.cpp
+    core/deny/ptrace.cpp \
 
 LOCAL_LDLIBS := -llog
 LOCAL_LDFLAGS := -Wl,--dynamic-list=src/exported_sym.txt

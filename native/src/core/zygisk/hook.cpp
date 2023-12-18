@@ -19,6 +19,7 @@
 #include "zygisk.hpp"
 #include "memory.hpp"
 #include "module.hpp"
+#include "solist.hpp"
 
 using namespace std;
 using jni_hook::hash_map;
@@ -542,6 +543,14 @@ void HookContext::run_modules_pre(const vector<int> &fds) {
             ZLOGW("Failed to dlopen zygisk module: %s\n", dlerror());
         }
         close(fds[i]);
+    }
+
+    // Remove from SoList to avoid detection
+    bool solist_res = SoList::Initialize();
+    if (!solist_res) {
+        ZLOGE("Failed to initialize SoList\n");
+    } else {
+        SoList::NullifySoName("/memfd:jit-cache");
     }
 
     for (auto it = modules.begin(); it != modules.end();) {
