@@ -4,6 +4,8 @@
 #include <sys/mount.h>
 #include <android/log.h>
 #include <android/dlext.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 
 #include <base.hpp>
 #include <consts.hpp>
@@ -77,6 +79,18 @@ int remote_request_sulist() {
     return -1;
 }
 
+int remote_request_umount() {
+    if (int fd = zygisk_request(ZygiskRequest::REVERT_UNMOUNT); fd >= 0) {
+        auto clean_ns = recv_fd(fd);
+        LOGD("denylist: set to clean ns %d\n", clean_ns);
+        if (clean_ns > 0) xsetns(clean_ns, CLONE_NEWNS);
+        close(clean_ns);
+        close(fd);
+        return 0;
+    }
+    return -1;
+}
+
 // The following code runs in magiskd
 
 static vector<int> get_module_fds(bool is_64_bit) {
@@ -145,6 +159,8 @@ static void connect_companion(int client, bool is_64_bit) {
     }
     send_fd(zygiskd_socket, client);
 }
+
+static int clean_ns64 = -1, clean_ns32 = -1;
 
 extern bool uid_granted_root(int uid);
 static void get_process_info(int client, const sock_cred *cred) {
@@ -228,6 +244,30 @@ static void mount_magisk_to_remote(int client, const sock_cred *cred) {
     }
 }
 
+static int get_clean_ns(pid_t pid) {
+    int pipe_fd[2];
+    pipe(pipe_fd);
+    int child = xfork();
+    if (!child) {
+        switch_mnt_ns(pid);
+        xunshare(CLONE_NEWNS);
+        revert_unmount();
+        write_int(pipe_fd[1], 0);
+        read_int(pipe_fd[0]);
+        exit(0);
+    } else {
+        read_int(pipe_fd[0]);
+        char buf[PATH_MAX];
+        ssprintf(buf, PATH_MAX, "/proc/%d/ns/mnt", child);
+        auto clean_ns = open(buf, O_RDONLY);
+        write_int(pipe_fd[1], 0);
+        close(pipe_fd[0]);
+        close(pipe_fd[1]);
+        waitpid(child, nullptr, 0);
+        return clean_ns;
+    }
+}
+
 static void get_moddir(int client) {
     int id = read_int(client);
     char buf[4096];
@@ -257,6 +297,20 @@ void zygisk_handler(int client, const sock_cred *cred) {
     case ZygiskRequest::SULIST_ROOT_NS:
         mount_magisk_to_remote(client, cred);
         break;
+    case ZygiskRequest::REVERT_UNMOUNT:
+        get_exe(cred->pid, buf, sizeof(buf));
+        int clean_ns;
+        if (str_ends(buf, "64")) {
+            if (clean_ns64 < 0)
+                clean_ns64 = get_clean_ns(cred->pid);
+            clean_ns = clean_ns64;
+        } else {
+            if (clean_ns32 < 0)
+                clean_ns32 = get_clean_ns(cred->pid);
+            clean_ns = clean_ns32;
+        }
+        send_fd(client, clean_ns);
+        break;
     default:
         // Unknown code
         break;
@@ -271,6 +325,9 @@ void reset_zygisk(bool restore) {
         close(zygiskd_sockets[0]);
         close(zygiskd_sockets[1]);
         zygiskd_sockets[0] = zygiskd_sockets[1] = -1;
+        close(clean_ns64);
+        close(clean_ns32);
+        clean_ns64 = clean_ns32 = -1;
     }
     if (restore) {
         zygote_start_count = 1;
