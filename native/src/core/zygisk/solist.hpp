@@ -62,8 +62,7 @@ namespace SoList
             if (iter->get_name() && iter->get_path() && strstr(iter->get_path(), target_name)) {
                 //iter->nullify_name(); // crash, not needed
                 iter->nullify_path();
-                ZLOGI("Cleared SOList entry for %s", target_name);
-                break;
+                ZLOGI("Cleared SOList entry for %s\n", target_name);
             }
         }
     }
@@ -76,7 +75,7 @@ namespace SoList
         #endif
 
         if (dl_linker == nullptr) {
-            ZLOGE("SoList::Initialize(): Error dlopen linker for initializing SoList %s", dlerror());
+            ZLOGE("SoList::Initialize(): Error dlopen linker for initializing SoList %s\n", dlerror());
             return false;
         }
 
@@ -99,9 +98,9 @@ namespace SoList
 
             return (SoInfo::get_realpath_sym != nullptr && SoInfo::get_soname_sym != nullptr);
         } else {
-            ZLOGE("Something failed getting linker symbols");
-            ZLOGE("solist: %p", solist);
-            ZLOGE("somain: %p", somain);
+            ZLOGE("Something failed getting linker symbols\n");
+            ZLOGE("solist: %p\n", solist);
+            ZLOGE("somain: %p\n", somain);
         }
 
         return false;
