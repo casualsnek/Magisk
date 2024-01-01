@@ -237,7 +237,7 @@ private:
     bool is64bit;
 };
 
-static void inject_magisk_bins(root_node *system) {
+static void inject_magisk_bins(dir_node *system) {
     auto bin = system->get_child<inter_node>("bin");
     if (!bin) {
         bin = new inter_node("bin");
@@ -316,8 +316,20 @@ void load_modules() {
         close(fd);
     }
 
-    // Need to inject our binaries into /system/bin
-    inject_magisk_bins(system);
+    // Need to inject our binaries into PATH
+    auto env_path = split(getenv("PATH"), ":");
+    if (std::find(env_path.begin(), env_path.end(), get_magisk_tmp()) == env_path.end()) {
+        if (std::find(env_path.begin(), env_path.end(), "/apex/com.android.runtime/bin") != env_path.end() &&
+            access("/apex/com.android.runtime/bin", F_OK) == 0) {
+            auto apex = new root_node("apex");
+            root->insert(apex);
+            auto apex_runtime = new inter_node("com.android.runtime");
+            apex->insert(apex_runtime);
+            inject_magisk_bins(apex_runtime);
+        } else {
+            inject_magisk_bins(system);
+        }
+    }
 
     if (zygisk_enabled) {
 #if USE_PTRACE == 1
@@ -348,7 +360,7 @@ void load_modules() {
 #endif
     }
 
-    if (!system->is_empty()) {
+    if (!root->is_empty()) {
         // Handle special read-only partitions
         for (const char *part : { "/vendor", "/product", "/system_ext" }) {
             struct stat st{};
@@ -397,10 +409,22 @@ void su_mount() {
         close(fd);
     }
 
-    // Need to inject our binaries into /system/bin
-    inject_magisk_bins(system);
+    // Need to inject our binaries into PATH
+    auto env_path = split(getenv("PATH"), ":");
+    if (std::find(env_path.begin(), env_path.end(), get_magisk_tmp()) == env_path.end()) {
+        if (std::find(env_path.begin(), env_path.end(), "/apex/com.android.runtime/bin") != env_path.end() &&
+            access("/apex/com.android.runtime/bin", F_OK) == 0) {
+            auto apex = new root_node("apex");
+            root->insert(apex);
+            auto apex_runtime = new inter_node("com.android.runtime");
+            apex->insert(apex_runtime);
+            inject_magisk_bins(apex_runtime);
+        } else {
+            inject_magisk_bins(system);
+        }
+    }
 
-    if (!system->is_empty()) {
+    if (!root->is_empty()) {
         // Handle special read-only partitions
         for (const char *part : { "/vendor", "/product", "/system_ext" }) {
             struct stat st{};
